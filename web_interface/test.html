@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Remote Lab - Protocol Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .success { background-color: #d4edda; color: #155724; }
+        .error { background-color: #f8d7da; color: #721c24; }
+        .info { background-color: #d1ecf1; color: #0c5460; }
+        button { padding: 10px 20px; margin: 5px; border: none; border-radius: 5px; cursor: pointer; }
+        .btn-primary { background-color: #007bff; color: white; }
+        .btn-success { background-color: #28a745; color: white; }
+        .btn-danger { background-color: #dc3545; color: white; }
+        #log { height: 300px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; background-color: #f8f9fa; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Remote Laboratory - Communication Protocol Test</h1>
+        
+        <div class="status info">
+            <strong>Instructions:</strong>
+            <ol>
+                <li>Enter your ESP32's IP address below</li>
+                <li>Click "Connect" to establish WebSocket connection</li>
+                <li>Use "Test Ping" to verify communication</li>
+                <li>Use "Measure Resistor" to test the main functionality</li>
+            </ol>
+        </div>
+
+        <div>
+            <label for="esp32-ip">ESP32 IP Address:</label>
+            <input type="text" id="esp32-ip" placeholder="192.168.1.100" value="192.168.1.100">
+            <button id="connect-btn" class="btn-primary">Connect</button>
+            <button id="disconnect-btn" class="btn-danger" disabled>Disconnect</button>
+        </div>
+
+        <div id="connection-status" class="status info">Status: Not connected</div>
+
+        <div>
+            <button id="ping-btn" class="btn-primary" disabled>Test Ping</button>
+            <button id="measure-btn" class="btn-success" disabled>Measure Resistor</button>
+            <button id="clear-log-btn" class="btn-danger">Clear Log</button>
+        </div>
+
+        <h3>Communication Log:</h3>
+        <div id="log"></div>
+    </div>
+
+    <script>
+        let socket = null;
+        let isConnected = false;
+
+        const connectBtn = document.getElementById('connect-btn');
+        const disconnectBtn = document.getElementById('disconnect-btn');
+        const pingBtn = document.getElementById('ping-btn');
+        const measureBtn = document.getElementById('measure-btn');
+        const clearLogBtn = document.getElementById('clear-log-btn');
+        const esp32IpInput = document.getElementById('esp32-ip');
+        const connectionStatus = document.getElementById('connection-status');
+        const logDiv = document.getElementById('log');
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.innerHTML = `<strong>[${timestamp}]</strong> ${message}`;
+            logEntry.style.color = type === 'error' ? '#dc3545' : type === 'success' ? '#28a745' : '#6c757d';
+            logDiv.appendChild(logEntry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function updateConnectionStatus(connected) {
+            isConnected = connected;
+            connectionStatus.textContent = `Status: ${connected ? 'Connected' : 'Not connected'}`;
+            connectionStatus.className = `status ${connected ? 'success' : 'info'}`;
+            
+            connectBtn.disabled = connected;
+            disconnectBtn.disabled = !connected;
+            pingBtn.disabled = !connected;
+            measureBtn.disabled = !connected;
+        }
+
+        function connect() {
+            const ip = esp32IpInput.value.trim();
+            if (!ip) {
+                log('Please enter a valid IP address', 'error');
+                return;
+            }
+
+            log(`Attempting to connect to ws://${ip}:81`);
+            
+            try {
+                socket = new WebSocket(`ws://${ip}:81`);
+                
+                socket.onopen = function(event) {
+                    log('WebSocket connection established', 'success');
+                    updateConnectionStatus(true);
+                };
+                
+                socket.onmessage = function(event) {
+                    log(`Received: ${event.data}`, 'success');
+                    
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === 'resistance_measurement') {
+                            log(`Resistance measured: ${data.resistance.toFixed(2)} ${data.unit} (${data.samples} samples)`, 'success');
+                        }
+                    } catch (e) {
+                        log('Failed to parse received JSON', 'error');
+                    }
+                };
+                
+                socket.onerror = function(error) {
+                    log(`WebSocket error: ${error}`, 'error');
+                };
+                
+                socket.onclose = function(event) {
+                    log('WebSocket connection closed', 'info');
+                    updateConnectionStatus(false);
+                    socket = null;
+                };
+                
+            } catch (error) {
+                log(`Connection failed: ${error}`, 'error');
+            }
+        }
+
+        function disconnect() {
+            if (socket) {
+                socket.close();
+            }
+        }
+
+        function sendCommand(command) {
+            if (!socket || !isConnected) {
+                log('Not connected to ESP32', 'error');
+                return;
+            }
+
+            const message = JSON.stringify({ command: command });
+            log(`Sending: ${message}`);
+            socket.send(message);
+        }
+
+        // Event listeners
+        connectBtn.addEventListener('click', connect);
+        disconnectBtn.addEventListener('click', disconnect);
+        pingBtn.addEventListener('click', () => sendCommand('ping'));
+        measureBtn.addEventListener('click', () => sendCommand('measure_resistor'));
+        clearLogBtn.addEventListener('click', () => logDiv.innerHTML = '');
+
+        // Allow Enter key to connect
+        esp32IpInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                connect();
+            }
+        });
+
+        // Initial log entry
+        log('Protocol test page loaded. Ready to connect to ESP32.');
+    </script>
+</body>
+</html>
