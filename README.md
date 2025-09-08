@@ -1,15 +1,17 @@
-# Remote Laboratory System
+# Remote Laboratory Multi-Experiment System
 
-A web-based remote laboratory for resistor measurement experiments using ESP32 microcontroller. This system enables students and researchers to conduct basic electrical engineering experiments remotely via a modern web interface.
+A comprehensive ESP32-based remote laboratory platform for electrical engineering education, enabling students to perform multiple experiments remotely via an interactive web interface. This system supports resistor measurement, LED PWM control, temperature sensing, light measurement, and logic gate simulation.
 
 ## 🎯 Project Overview
 
 This remote laboratory system provides:
-- **Real-time resistor measurement** using voltage divider circuits
-- **Web-based interface** accessible from any device
-- **WebSocket communication** for instant data updates
-- **Data visualization** with interactive charts
-- **Measurement history** and data export capabilities
+- **Five Interactive Experiments**: Resistor measurement, LED PWM control, temperature sensing, light measurement, and logic gate simulation
+- **Real-time Data Collection** using ESP32 ADC and digital I/O
+- **Modern Web Interface** with responsive design and experiment navigation
+- **WebSocket Communication** for instant bidirectional data updates
+- **Interactive Visualizations** with Chart.js for all experiments
+- **Data Export** and measurement history for analysis
+- **Educational Value** covering fundamental EE concepts
 
 ## 🏗️ System Architecture
 
@@ -120,23 +122,13 @@ remote-lab/
 |-----------|---------------|---------|
 | Capacitor | 0.1μF ceramic | Noise filtering |
 | Terminal Blocks | 2-pin | Secure connections |
-| MCP3008 ADC | 10-bit SPI | Higher precision |
 
-## 💻 Software Features
-
-### Web Interface
-- **Responsive design** works on desktop and mobile
-- **Real-time measurements** via WebSocket
-- **Interactive charts** using Chart.js
-- **Data export** to CSV format
-- **Connection management** with status indicators
-
-### Firmware Features
-- **Multi-sampling** for improved accuracy (20 samples)
-- **Error handling** for robust operation
-- **Calibration support** with correction factors
-- **Quality assessment** of measurements
-- **Serial debugging** output
+### 🎯 Educational Features
+- **Statistical Analysis** - Multi-sampling with uncertainty calculations
+- **Quality Assessment** - Measurement reliability indicators
+- **Truth Table Generation** - Automatic logic gate truth tables
+- **Calibration Support** - Built-in calibration for improved accuracy
+- **Error Handling** - Comprehensive validation and user feedback
 
 ## 📊 Measurement Specifications
 

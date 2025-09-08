@@ -15,6 +15,28 @@ const char* password = "YourWiFiPassword";
 const int RESISTOR_MEASURE_PIN = 34;  // GPIO34 is an ADC1 channel
 const int KNOWN_RESISTOR = 10000;     // 10kΩ known resistor in voltage divider
 
+// LED PWM experiment pins
+const int LED_PIN = 2;                // Built-in LED or external LED
+const int PWM_CHANNEL = 0;
+const int PWM_FREQUENCY = 5000;
+const int PWM_RESOLUTION = 8;         // 8-bit resolution (0-255)
+
+// Temperature sensor pins (LM35)
+const int TEMP_SENSOR_PIN = 35;       // GPIO35 for LM35
+
+// Light sensor pins (LDR)
+const int LIGHT_SENSOR_PIN = 32;      // GPIO32 for LDR with voltage divider
+
+// Logic gate simulation pins
+const int LOGIC_INPUT_A_PIN = 25;     // GPIO25 for input A
+const int LOGIC_INPUT_B_PIN = 26;     // GPIO26 for input B
+const int LOGIC_OUTPUT_PIN = 27;      // GPIO27 for output LED
+
+// Global variables
+bool temperatureMonitoring = false;
+unsigned long lastTempReading = 0;
+const unsigned long TEMP_INTERVAL = 2000; // 2 seconds
+
 // Web server on port 80
 WebServer server(80);
 
@@ -28,6 +50,10 @@ void handleAppJS();
 void handleNotFound();
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t length);
 void measureResistor(uint8_t client);
+void setLEDBrightness(uint8_t client, int brightness);
+void readTemperature(uint8_t client);
+void readLightIntensity(uint8_t client);
+void setLogicGate(uint8_t client, String gateType, bool inputA, bool inputB);
 String getContentType(String filename);
 bool handleFileRead(String path);
 
@@ -81,12 +107,27 @@ void setup() {
   
   // Set pin modes
   pinMode(RESISTOR_MEASURE_PIN, INPUT);
+  pinMode(TEMP_SENSOR_PIN, INPUT);
+  pinMode(LIGHT_SENSOR_PIN, INPUT);
+  pinMode(LOGIC_INPUT_A_PIN, INPUT_PULLUP);
+  pinMode(LOGIC_INPUT_B_PIN, INPUT_PULLUP);
+  pinMode(LOGIC_OUTPUT_PIN, OUTPUT);
+  
+  // Initialize PWM for LED
+  ledcSetup(PWM_CHANNEL, PWM_FREQUENCY, PWM_RESOLUTION);
+  ledcAttachPin(LED_PIN, PWM_CHANNEL);
+  ledcWrite(PWM_CHANNEL, 0); // Start with LED off
 }
 
 void loop() {
   webSocket.loop();
   server.handleClient();
-  // Add any periodic tasks here
+  
+  // Handle temperature monitoring
+  if (temperatureMonitoring && (millis() - lastTempReading > TEMP_INTERVAL)) {
+    lastTempReading = millis();
+    readTemperature(0); // Send to all clients
+  }
 }
 
 // WebSocket event handler
@@ -140,6 +181,34 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t length)
       
       if (strcmp(command, "measure_resistor") == 0) {
         measureResistor(num);
+      } else if (strcmp(command, "set_led_brightness") == 0) {
+        int brightness = doc["brightness"] | 0;
+        setLEDBrightness(num, brightness);
+      } else if (strcmp(command, "read_temperature") == 0) {
+        readTemperature(num);
+      } else if (strcmp(command, "start_temperature_monitoring") == 0) {
+        temperatureMonitoring = true;
+        StaticJsonDocument<64> response;
+        response["type"] = "status";
+        response["message"] = "Temperature monitoring started";
+        String jsonResponse;
+        serializeJson(response, jsonResponse);
+        webSocket.sendTXT(num, jsonResponse);
+      } else if (strcmp(command, "stop_temperature_monitoring") == 0) {
+        temperatureMonitoring = false;
+        StaticJsonDocument<64> response;
+        response["type"] = "status";
+        response["message"] = "Temperature monitoring stopped";
+        String jsonResponse;
+        serializeJson(response, jsonResponse);
+        webSocket.sendTXT(num, jsonResponse);
+      } else if (strcmp(command, "read_light") == 0) {
+        readLightIntensity(num);
+      } else if (strcmp(command, "set_logic_gate") == 0) {
+        String gateType = doc["gate_type"] | "AND";
+        bool inputA = doc["input_a"] | false;
+        bool inputB = doc["input_b"] | false;
+        setLogicGate(num, gateType, inputA, inputB);
       } else if (strcmp(command, "ping") == 0) {
         // Simple ping-pong for connection testing
         StaticJsonDocument<64> pongMsg;
@@ -234,6 +303,154 @@ void measureResistor(uint8_t client) {
   doc["std_deviation"] = stdDev;
   doc["timestamp"] = millis();
   doc["quality"] = (validSamples >= 15) ? "good" : (validSamples >= 10) ? "fair" : "poor";
+  
+  String jsonResponse;
+  serializeJson(doc, jsonResponse);
+  webSocket.sendTXT(client, jsonResponse);
+}
+
+// LED PWM Brightness Control
+void setLEDBrightness(uint8_t client, int brightness) {
+  Serial.printf("Setting LED brightness to %d%%\n", brightness);
+  
+  // Constrain brightness to valid range
+  brightness = constrain(brightness, 0, 100);
+  
+  // Convert percentage to PWM value (0-255)
+  int pwmValue = map(brightness, 0, 100, 0, 255);
+  
+  // Set PWM output
+  ledcWrite(PWM_CHANNEL, pwmValue);
+  
+  // Send response
+  StaticJsonDocument<128> doc;
+  doc["type"] = "led_status";
+  doc["brightness"] = brightness;
+  doc["pwm_value"] = pwmValue;
+  doc["timestamp"] = millis();
+  
+  String jsonResponse;
+  serializeJson(doc, jsonResponse);
+  webSocket.sendTXT(client, jsonResponse);
+}
+
+// Temperature Reading (LM35)
+void readTemperature(uint8_t client) {
+  Serial.println("Reading temperature...");
+  
+  // Take multiple samples for accuracy
+  const int numSamples = 10;
+  float totalVoltage = 0;
+  
+  for (int i = 0; i < numSamples; i++) {
+    int adcValue = analogRead(TEMP_SENSOR_PIN);
+    float voltage = adcValue * (3.3 / 4095.0); // Convert to voltage
+    totalVoltage += voltage;
+    delay(10);
+  }
+  
+  float avgVoltage = totalVoltage / numSamples;
+  
+  // LM35 outputs 10mV per degree Celsius
+  float temperature = avgVoltage * 100.0; // Convert to Celsius
+  
+  Serial.printf("Temperature: %.2f°C (Voltage: %.3fV)\n", temperature, avgVoltage);
+  
+  // Send response
+  StaticJsonDocument<128> doc;
+  doc["type"] = "temperature_reading";
+  doc["temperature"] = temperature;
+  doc["voltage"] = avgVoltage;
+  doc["unit"] = "celsius";
+  doc["timestamp"] = millis();
+  
+  String jsonResponse;
+  serializeJson(doc, jsonResponse);
+  
+  if (client == 0) {
+    // Broadcast to all clients (for monitoring mode)
+    webSocket.broadcastTXT(jsonResponse);
+  } else {
+    webSocket.sendTXT(client, jsonResponse);
+  }
+}
+
+// Light Intensity Reading (LDR)
+void readLightIntensity(uint8_t client) {
+  Serial.println("Reading light intensity...");
+  
+  // Take multiple samples for accuracy
+  const int numSamples = 10;
+  float totalVoltage = 0;
+  
+  for (int i = 0; i < numSamples; i++) {
+    int adcValue = analogRead(LIGHT_SENSOR_PIN);
+    float voltage = adcValue * (3.3 / 4095.0);
+    totalVoltage += voltage;
+    delay(10);
+  }
+  
+  float avgVoltage = totalVoltage / numSamples;
+  
+  // Convert voltage to light intensity (approximate lux calculation)
+  // This assumes a voltage divider with LDR and 10kΩ resistor
+  float resistance = (10000.0 * (3.3 - avgVoltage)) / avgVoltage;
+  
+  // Approximate lux calculation (calibration may be needed)
+  float lightIntensity = 500000.0 / resistance; // Rough approximation
+  lightIntensity = constrain(lightIntensity, 0, 2000); // Reasonable range
+  
+  Serial.printf("Light intensity: %.1f lux (Voltage: %.3fV, Resistance: %.1fΩ)\n", 
+                lightIntensity, avgVoltage, resistance);
+  
+  // Send response
+  StaticJsonDocument<150> doc;
+  doc["type"] = "light_reading";
+  doc["light_intensity"] = lightIntensity;
+  doc["voltage"] = avgVoltage;
+  doc["resistance"] = resistance;
+  doc["unit"] = "lux";
+  doc["timestamp"] = millis();
+  
+  String jsonResponse;
+  serializeJson(doc, jsonResponse);
+  webSocket.sendTXT(client, jsonResponse);
+}
+
+// Logic Gate Simulation
+void setLogicGate(uint8_t client, String gateType, bool inputA, bool inputB) {
+  Serial.printf("Logic gate: %s, A=%d, B=%d\n", gateType.c_str(), inputA, inputB);
+  
+  bool output = false;
+  
+  // Calculate output based on gate type
+  if (gateType == "AND") {
+    output = inputA && inputB;
+  } else if (gateType == "OR") {
+    output = inputA || inputB;
+  } else if (gateType == "NOT") {
+    output = !inputA; // Use only input A for NOT gate
+  } else if (gateType == "NAND") {
+    output = !(inputA && inputB);
+  } else if (gateType == "NOR") {
+    output = !(inputA || inputB);
+  } else if (gateType == "XOR") {
+    output = inputA != inputB;
+  }
+  
+  // Set physical output LED
+  digitalWrite(LOGIC_OUTPUT_PIN, output ? HIGH : LOW);
+  
+  Serial.printf("Logic gate output: %d\n", output);
+  
+  // Send response
+  StaticJsonDocument<150> doc;
+  doc["type"] = "logic_gate_result";
+  doc["gate_type"] = gateType;
+  doc["input_a"] = inputA;
+  doc["input_b"] = inputB;
+  doc["output"] = output;
+  doc["timestamp"] = millis();
   
   String jsonResponse;
   serializeJson(doc, jsonResponse);

@@ -1,10 +1,12 @@
-# Resistor Measurement Circuit Design
+# Circuit Diagrams and Hardware Setup
 
-## Circuit Overview
+This document provides detailed information about the hardware circuit designs for all remote laboratory experiments including resistor measurement, LED PWM control, temperature sensing, light measurement, and logic gate simulation.
 
-The resistor measurement experiment uses a voltage divider circuit to determine unknown resistance values. This is a fundamental electrical engineering concept that demonstrates Ohm's Law and voltage division principles.
+## 1. Resistor Measurement Circuit
 
-## Circuit Diagram
+The resistor measurement experiment uses a voltage divider circuit to determine unknown resistance values.
+
+### Circuit Diagram
 
 ```
     3.3V
@@ -17,6 +19,18 @@ The resistor measurement experiment uses a voltage divider circuit to determine 
      |
     GND
 ```
+
+### Components Required
+- 10kΩ Resistor (R1 - Known resistor)
+- Unknown resistor to be measured (R2)
+- Breadboard and jumper wires
+
+### Pin Connections
+| Component | ESP32 Pin | Description |
+|-----------|-----------|-------------|
+| R1 (10kΩ) | 3.3V | Positive supply |
+| Junction | GPIO34 | ADC input for voltage measurement |
+| R2 (Unknown) | GND | Ground connection |
 
 ## Component Specifications
 

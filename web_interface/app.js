@@ -1,23 +1,31 @@
 // Global variables
 let socket = null;
 let isConnected = false;
-let measurementHistory = [];
-let chart = null;
+let currentExperiment = 'resistor';
+let experimentData = {
+    resistor: [],
+    temperature: [],
+    light: [],
+    pwm: []
+};
+let charts = {};
+let temperatureMonitoring = false;
+let monitoringInterval = null;
 
-// DOM Elements
+// DOM Elements - Common
 const connectBtn = document.getElementById('connect-btn');
-const measureBtn = document.getElementById('measure-btn');
 const deviceIpInput = document.getElementById('device-ip');
 const connectionStatus = document.getElementById('connection-status');
-const resistanceValue = document.getElementById('resistance-value');
-const measurementProgress = document.getElementById('measurement-progress');
-const clearHistoryBtn = document.getElementById('clear-history');
-const exportDataBtn = document.getElementById('export-data');
+const connectionIndicator = document.getElementById('connection-indicator');
+
+// Navigation elements
+const navLinks = document.querySelectorAll('[data-experiment]');
+const experimentPanels = document.querySelectorAll('.experiment-panel');
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', () => {
-    // Initialize chart
-    initChart();
+    // Initialize charts for all experiments
+    initializeCharts();
     
     // Load saved device IP if available
     const savedIp = localStorage.getItem('deviceIp');
@@ -25,29 +33,22 @@ document.addEventListener('DOMContentLoaded', () => {
         deviceIpInput.value = savedIp;
     }
     
-    // Load saved measurements if available
-    const savedMeasurements = localStorage.getItem('measurementHistory');
-    if (savedMeasurements) {
-        measurementHistory = JSON.parse(savedMeasurements);
-        updateChart();
-    }
+    // Load saved experiment data
+    loadExperimentData();
     
     // Set up event listeners
     setupEventListeners();
+    
+    // Initialize experiment navigation
+    setupExperimentNavigation();
+    
+    // Initialize logic gates
+    initializeLogicGates();
 });
 
 function setupEventListeners() {
     // Connect button click handler
     connectBtn.addEventListener('click', toggleConnection);
-    
-    // Measure button click handler
-    measureBtn.addEventListener('click', measureResistor);
-    
-    // Clear history button click handler
-    clearHistoryBtn.addEventListener('click', clearHistory);
-    
-    // Export data button click handler
-    exportDataBtn.addEventListener('click', exportData);
     
     // Handle Enter key in IP input
     deviceIpInput.addEventListener('keypress', (e) => {
@@ -55,6 +56,63 @@ function setupEventListeners() {
             toggleConnection();
         }
     });
+    
+    // Resistor experiment
+    const measureResistorBtn = document.getElementById('measure-resistor-btn');
+    if (measureResistorBtn) {
+        measureResistorBtn.addEventListener('click', () => sendCommand('measure_resistor'));
+    }
+    
+    // LED PWM experiment
+    const brightnessSlider = document.getElementById('brightness-slider');
+    const ledOnBtn = document.getElementById('led-on-btn');
+    const ledOffBtn = document.getElementById('led-off-btn');
+    
+    if (brightnessSlider) {
+        brightnessSlider.addEventListener('input', updateBrightness);
+    }
+    if (ledOnBtn) {
+        ledOnBtn.addEventListener('click', () => setLED(true));
+    }
+    if (ledOffBtn) {
+        ledOffBtn.addEventListener('click', () => setLED(false));
+    }
+    
+    // Temperature experiment
+    const readTempBtn = document.getElementById('read-temperature-btn');
+    const startMonitoringBtn = document.getElementById('start-monitoring-btn');
+    const stopMonitoringBtn = document.getElementById('stop-monitoring-btn');
+    
+    if (readTempBtn) {
+        readTempBtn.addEventListener('click', () => sendCommand('read_temperature'));
+    }
+    if (startMonitoringBtn) {
+        startMonitoringBtn.addEventListener('click', startTemperatureMonitoring);
+    }
+    if (stopMonitoringBtn) {
+        stopMonitoringBtn.addEventListener('click', stopTemperatureMonitoring);
+    }
+    
+    // Light sensor experiment
+    const readLightBtn = document.getElementById('read-light-btn');
+    if (readLightBtn) {
+        readLightBtn.addEventListener('click', () => sendCommand('read_light'));
+    }
+    
+    // Logic gates experiment
+    const gateType = document.getElementById('gate-type');
+    const inputA = document.getElementById('input-a');
+    const inputB = document.getElementById('input-b');
+    
+    if (gateType) {
+        gateType.addEventListener('change', updateLogicGate);
+    }
+    if (inputA) {
+        inputA.addEventListener('change', updateLogicGate);
+    }
+    if (inputB) {
+        inputB.addEventListener('change', updateLogicGate);
+    }
 }
 
 function toggleConnection() {
@@ -128,24 +186,52 @@ function updateConnectionStatus(connected) {
     const statusText = connected ? 'Connected' : 'Not connected';
     const statusClass = connected ? 'alert-success' : 'alert-secondary';
     
-    connectionStatus.className = 'alert ' + statusClass;
+    connectionStatus.className = 'alert ' + statusClass + ' mb-0';
     connectionStatus.textContent = `Status: ${statusText}`;
     connectBtn.textContent = connected ? 'Disconnect' : 'Connect';
     connectBtn.className = connected ? 'btn btn-warning' : 'btn btn-primary';
+    
+    // Update navbar indicator
+    if (connectionIndicator) {
+        connectionIndicator.textContent = connected ? 'Connected' : 'Disconnected';
+        connectionIndicator.className = connected ? 'badge bg-success' : 'badge bg-secondary';
+    }
+    
+    // Enable/disable experiment controls
+    enableExperimentControls(connected);
 }
 
 function handleWebSocketMessage(event) {
     try {
         const data = JSON.parse(event.data);
+        console.log('Received:', data);
         
-        if (data.type === 'resistance_measurement') {
-            const resistance = parseFloat(data.resistance);
-            updateMeasurement(resistance);
-            addToHistory(resistance);
-            updateChart();
+        switch (data.type) {
+            case 'resistance_measurement':
+                handleResistanceMeasurement(data);
+                break;
+            case 'temperature_reading':
+                handleTemperatureReading(data);
+                break;
+            case 'light_reading':
+                handleLightReading(data);
+                break;
+            case 'led_status':
+                handleLEDStatus(data);
+                break;
+            case 'logic_gate_result':
+                handleLogicGateResult(data);
+                break;
+            case 'status':
+                console.log('Status:', data.message);
+                break;
+            case 'error':
+                showAlert(data.message, 'danger');
+                break;
         }
     } catch (error) {
         console.error('Error parsing WebSocket message:', error);
+        showAlert('Error parsing server response', 'danger');
     }
 }
 

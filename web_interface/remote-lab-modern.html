@@ -1,0 +1,2214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Remote Laboratory - Multi-Experiment Platform</title>
+    <style>
+        /* 
+        ESP32 DEPLOYMENT INSTRUCTIONS:
+        1. Save this file as "index.html" in your ESP32's SPIFFS or LittleFS data folder
+        2. Upload to ESP32 using Arduino IDE Tools > ESP32 Sketch Data Upload
+        3. Configure WiFi credentials in your ESP32 sketch
+        4. Update the device API endpoints in the JavaScript section (search for "TODO: ESP32")
+        5. The ESP32 should serve this file on port 80, WebSocket on port 81
+        6. Access via ESP32's IP address in any modern browser
+        */
+
+        /* CSS Variables for theming */
+        :root {
+            --color-primary: #4f46e5;
+            --color-primary-hover: #4338ca;
+            --color-secondary: #6b7280;
+            --color-success: #10b981;
+            --color-warning: #f59e0b;
+            --color-error: #ef4444;
+            --color-background: #ffffff;
+            --color-surface: #f8fafc;
+            --color-surface-elevated: #ffffff;
+            --color-border: #e2e8f0;
+            --color-text: #1e293b;
+            --color-text-secondary: #64748b;
+            --color-text-muted: #94a3b8;
+            --radius-sm: 0.375rem;
+            --radius-md: 0.5rem;
+            --radius-lg: 0.75rem;
+            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+            --spacing-xs: 0.25rem;
+            --spacing-sm: 0.5rem;
+            --spacing-md: 1rem;
+            --spacing-lg: 1.5rem;
+            --spacing-xl: 2rem;
+        }
+
+        [data-theme="dark"] {
+            --color-background: #0f172a;
+            --color-surface: #1e293b;
+            --color-surface-elevated: #334155;
+            --color-border: #475569;
+            --color-text: #f1f5f9;
+            --color-text-secondary: #cbd5e1;
+            --color-text-muted: #94a3b8;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--color-background);
+            color: var(--color-text);
+            line-height: 1.5;
+            transition: background-color 0.2s, color 0.2s;
+        }
+
+        /* Header */
+        .header {
+            background: var(--color-surface-elevated);
+            border-bottom: 1px solid var(--color-border);
+            padding: var(--spacing-md) 0;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .header-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 var(--spacing-md);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--spacing-lg);
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--color-text);
+            text-decoration: none;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-md);
+        }
+
+        /* Connection Status */
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+            padding: var(--spacing-xs) var(--spacing-sm);
+            border-radius: var(--radius-md);
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .connection-status.disconnected {
+            background: #fef2f2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+        }
+
+        .connection-status.connecting {
+            background: #fefbeb;
+            color: #92400e;
+            border: 1px solid #fed7aa;
+        }
+
+        .connection-status.connected {
+            background: #f0fdf4;
+            color: #166534;
+            border: 1px solid #bbf7d0;
+        }
+
+        [data-theme="dark"] .connection-status.disconnected {
+            background: #450a0a;
+            color: #fca5a5;
+            border: 1px solid #7f1d1d;
+        }
+
+        [data-theme="dark"] .connection-status.connecting {
+            background: #451a03;
+            color: #fdba74;
+            border: 1px solid #92400e;
+        }
+
+        [data-theme="dark"] .connection-status.connected {
+            background: #052e16;
+            color: #86efac;
+            border: 1px solid #166534;
+        }
+
+        /* Theme Toggle */
+        .theme-toggle {
+            background: none;
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-md);
+            padding: var(--spacing-sm);
+            cursor: pointer;
+            color: var(--color-text);
+            transition: all 0.2s;
+        }
+
+        .theme-toggle:hover {
+            background: var(--color-surface);
+        }
+
+        /* Main Layout */
+        .main-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: var(--spacing-lg);
+            display: grid;
+            gap: var(--spacing-lg);
+        }
+
+        /* Cards */
+        .card {
+            background: var(--color-surface-elevated);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-sm);
+            overflow: hidden;
+        }
+
+        .card-header {
+            padding: var(--spacing-lg);
+            border-bottom: 1px solid var(--color-border);
+            background: var(--color-surface);
+        }
+
+        .card-title {
+            margin: 0;
+            font-size: 1.125rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+        }
+
+        .card-content {
+            padding: var(--spacing-lg);
+        }
+
+        /* Experiment Tabs */
+        .experiment-tabs {
+            display: flex;
+            gap: var(--spacing-xs);
+            margin-bottom: var(--spacing-lg);
+            overflow-x: auto;
+            padding: var(--spacing-xs);
+            background: var(--color-surface);
+            border-radius: var(--radius-lg);
+        }
+
+        .tab-button {
+            background: none;
+            border: none;
+            padding: var(--spacing-sm) var(--spacing-md);
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--color-text-secondary);
+            transition: all 0.2s;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-xs);
+        }
+
+        .tab-button:hover {
+            background: var(--color-surface-elevated);
+            color: var(--color-text);
+        }
+
+        .tab-button.active {
+            background: var(--color-primary);
+            color: white;
+        }
+
+        /* Form Elements */
+        .form-group {
+            margin-bottom: var(--spacing-md);
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: var(--spacing-xs);
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--color-text);
+        }
+
+        .form-input {
+            width: 100%;
+            padding: var(--spacing-sm) var(--spacing-md);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-md);
+            background: var(--color-background);
+            color: var(--color-text);
+            font-size: 0.875rem;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: var(--color-primary);
+            box-shadow: 0 0 0 3px rgb(79 70 229 / 0.1);
+        }
+
+        .form-input:invalid {
+            border-color: var(--color-error);
+        }
+
+        /* Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--spacing-xs);
+            padding: var(--spacing-sm) var(--spacing-md);
+            border: none;
+            border-radius: var(--radius-md);
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: var(--color-primary);
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: var(--color-primary-hover);
+        }
+
+        .btn-secondary {
+            background: var(--color-surface);
+            color: var(--color-text);
+            border: 1px solid var(--color-border);
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: var(--color-surface-elevated);
+        }
+
+        .btn-success {
+            background: var(--color-success);
+            color: white;
+        }
+
+        .btn-warning {
+            background: var(--color-warning);
+            color: white;
+        }
+
+        .btn-error {
+            background: var(--color-error);
+            color: white;
+        }
+
+        /* Experiment Panels */
+        .experiment-panel {
+            display: none;
+        }
+
+        .experiment-panel.active {
+            display: block;
+        }
+
+        .measurement-display {
+            text-align: center;
+            padding: var(--spacing-xl);
+            background: var(--color-surface);
+            border-radius: var(--radius-lg);
+            margin-bottom: var(--spacing-lg);
+        }
+
+        .measurement-value {
+            font-size: 3rem;
+            font-weight: 700;
+            color: var(--color-primary);
+            margin: 0;
+        }
+
+        .measurement-unit {
+            font-size: 1.25rem;
+            color: var(--color-text-secondary);
+            margin-top: var(--spacing-xs);
+        }
+
+        /* Progress Bar */
+        .progress {
+            width: 100%;
+            height: 0.5rem;
+            background: var(--color-surface);
+            border-radius: var(--radius-sm);
+            overflow: hidden;
+            margin: var(--spacing-md) 0;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: var(--color-primary);
+            transition: width 0.3s ease;
+            border-radius: var(--radius-sm);
+        }
+
+        /* Slider */
+        .slider-container {
+            margin: var(--spacing-lg) 0;
+        }
+
+        .slider {
+            width: 100%;
+            height: 0.5rem;
+            background: var(--color-surface);
+            border-radius: var(--radius-sm);
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 1.25rem;
+            height: 1.25rem;
+            background: var(--color-primary);
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        .slider::-moz-range-thumb {
+            width: 1.25rem;
+            height: 1.25rem;
+            background: var(--color-primary);
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+        }
+
+        /* LED Visual */
+        .led-visual {
+            width: 4rem;
+            height: 4rem;
+            margin: var(--spacing-lg) auto;
+            border-radius: 50%;
+            background: #374151;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .led-visual.on {
+            background: #fbbf24;
+            box-shadow: 0 0 20px #fbbf24;
+        }
+
+        /* Chart Container */
+        .chart-container {
+            height: 200px;
+            margin: var(--spacing-lg) 0;
+            background: var(--color-surface);
+            border-radius: var(--radius-lg);
+            padding: var(--spacing-md);
+        }
+
+        /* Truth Table */
+        .truth-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: var(--spacing-lg) 0;
+        }
+
+        .truth-table th,
+        .truth-table td {
+            padding: var(--spacing-sm);
+            text-align: center;
+            border: 1px solid var(--color-border);
+        }
+
+        .truth-table th {
+            background: var(--color-surface);
+            font-weight: 600;
+        }
+
+        /* Logic Inputs */
+        .logic-inputs {
+            display: flex;
+            gap: var(--spacing-lg);
+            margin: var(--spacing-lg) 0;
+            justify-content: center;
+        }
+
+        .logic-input {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: var(--spacing-sm);
+        }
+
+        .logic-switch {
+            width: 3rem;
+            height: 1.5rem;
+            background: var(--color-surface);
+            border-radius: 1rem;
+            position: relative;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .logic-switch.on {
+            background: var(--color-primary);
+        }
+
+        .logic-switch::after {
+            content: '';
+            position: absolute;
+            width: 1.25rem;
+            height: 1.25rem;
+            background: white;
+            border-radius: 50%;
+            top: 0.125rem;
+            left: 0.125rem;
+            transition: transform 0.2s;
+        }
+
+        .logic-switch.on::after {
+            transform: translateX(1.5rem);
+        }
+
+        /* Stats */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: var(--spacing-md);
+            margin: var(--spacing-lg) 0;
+        }
+
+        .stat-card {
+            background: var(--color-surface);
+            padding: var(--spacing-md);
+            border-radius: var(--radius-md);
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--color-primary);
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--color-text-secondary);
+            margin-top: var(--spacing-xs);
+        }
+
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            top: var(--spacing-lg);
+            right: var(--spacing-lg);
+            z-index: 1000;
+        }
+
+        .toast {
+            background: var(--color-surface-elevated);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-lg);
+            padding: var(--spacing-md);
+            margin-bottom: var(--spacing-sm);
+            box-shadow: var(--shadow-lg);
+            max-width: 400px;
+            animation: slideIn 0.3s ease;
+        }
+
+        .toast.success {
+            border-left: 4px solid var(--color-success);
+        }
+
+        .toast.error {
+            border-left: 4px solid var(--color-error);
+        }
+
+        .toast.warning {
+            border-left: 4px solid var(--color-warning);
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .header-content {
+                flex-direction: column;
+                gap: var(--spacing-md);
+            }
+
+            .experiment-tabs {
+                flex-wrap: wrap;
+            }
+
+            .main-container {
+                padding: var(--spacing-md);
+            }
+
+            .measurement-value {
+                font-size: 2rem;
+            }
+
+            .logic-inputs {
+                flex-direction: column;
+                align-items: center;
+            }
+        }
+
+        /* Accessibility */
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        :focus-visible {
+            outline: 2px solid var(--color-primary);
+            outline-offset: 2px;
+        }
+
+        /* Loading States */
+        .loading {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
+        .spinner {
+            width: 1rem;
+            height: 1rem;
+            border: 2px solid transparent;
+            border-top: 2px solid currentColor;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <a href="#" class="logo">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="4" y="4" width="16" height="16" rx="2"/>
+                    <rect x="9" y="9" width="6" height="6"/>
+                    <path d="m9 1 3 3 3-3"/>
+                </svg>
+                Remote Laboratory
+            </a>
+            
+            <div class="header-actions">
+                <div id="connectionStatus" class="connection-status disconnected" role="status" aria-live="polite">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Disconnected</span>
+                </div>
+                
+                <button id="themeToggle" class="theme-toggle" aria-label="Toggle theme">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="5"/>
+                        <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="main-container">
+        <!-- Connection Settings Card -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M5 12.55a11 11 0 0 1 14.08 0"/>
+                        <path d="M1.42 9a16 16 0 0 1 21.16 0"/>
+                        <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+                        <line x1="12" y1="20" x2="12.01" y2="20"/>
+                    </svg>
+                    Connection Settings
+                </h2>
+            </div>
+            <div class="card-content">
+                <div class="form-group">
+                    <label for="deviceIp" class="form-label">Device IP Address</label>
+                    <input 
+                        type="text" 
+                        id="deviceIp" 
+                        class="form-input" 
+                        placeholder="192.168.1.100" 
+                        pattern="^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
+                        aria-describedby="ipHelp"
+                    >
+                    <div id="ipHelp" class="form-help">Enter the IP address of your ESP32 device</div>
+                    <div id="ipError" class="form-error" style="display: none;"></div>
+                </div>
+                
+                <div style="display: flex; gap: var(--spacing-md); align-items: center;">
+                    <button id="connectBtn" class="btn btn-primary">
+                        <span class="btn-text">Connect</span>
+                    </button>
+                    
+                    <div id="pingDisplay" style="display: none;">
+                        <span class="text-sm text-secondary">Ping: <span id="pingValue">--</span>ms</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Experiment Tabs -->
+        <div class="experiment-tabs" role="tablist">
+            <button class="tab-button active" role="tab" data-experiment="resistor" aria-selected="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M6 3v18M18 3v18M6 12h12"/>
+                </svg>
+                Resistor
+            </button>
+            <button class="tab-button" role="tab" data-experiment="led" aria-selected="false">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="5"/>
+                    <path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24"/>
+                </svg>
+                LED PWM
+            </button>
+            <button class="tab-button" role="tab" data-experiment="temperature" aria-selected="false">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/>
+                </svg>
+                Temperature
+            </button>
+            <button class="tab-button" role="tab" data-experiment="light" aria-selected="false">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="4"/>
+                    <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 6.34L4.93 4.93M19.07 19.07l-1.41-1.41"/>
+                </svg>
+                Light
+            </button>
+            <button class="tab-button" role="tab" data-experiment="logic" aria-selected="false">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M6 3h12l4 6-4 6H6l4-6-4-6Z"/>
+                </svg>
+                Logic Gates
+            </button>
+        </div>
+
+        <!-- Experiment Panels -->
+        
+        <!-- Resistor Measurement Panel -->
+        <div id="resistor-panel" class="experiment-panel active card" role="tabpanel">
+            <div class="card-header">
+                <h3 class="card-title">Resistor Measurement</h3>
+            </div>
+            <div class="card-content">
+                <div class="measurement-display">
+                    <div class="measurement-value" id="resistorValue">--</div>
+                    <div class="measurement-unit">Ω</div>
+                    <div class="progress">
+                        <div id="resistorProgress" class="progress-bar" style="width: 0%"></div>
+                    </div>
+                </div>
+                
+                <div style="text-align: center; margin-bottom: var(--spacing-lg);">
+                    <button id="measureResistorBtn" class="btn btn-primary" disabled>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 12c-1 0-3-1-3-3s2-3 3-3 3 1 3 3-2 3-3 3"/>
+                            <path d="M3 12c1 0 3-1 3-3s-2-3-3-3-3 1-3 3 2 3 3 3"/>
+                            <path d="M3 12h6m6 0h6"/>
+                        </svg>
+                        Measure Resistor
+                    </button>
+                </div>
+
+                <div class="chart-container">
+                    <canvas id="resistorChart" width="400" height="200"></canvas>
+                </div>
+
+                <div style="display: flex; gap: var(--spacing-md); justify-content: center;">
+                    <button id="clearResistorHistory" class="btn btn-secondary">Clear History</button>
+                    <button id="exportResistorData" class="btn btn-secondary">Export CSV</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- LED PWM Panel -->
+        <div id="led-panel" class="experiment-panel card" role="tabpanel">
+            <div class="card-header">
+                <h3 class="card-title">LED PWM Control</h3>
+            </div>
+            <div class="card-content">
+                <div class="led-visual" id="ledVisual"></div>
+                
+                <div class="slider-container">
+                    <label for="pwmSlider" class="form-label">Brightness: <span id="pwmValue">0</span>%</label>
+                    <input 
+                        type="range" 
+                        id="pwmSlider" 
+                        class="slider" 
+                        min="0" 
+                        max="100" 
+                        value="0" 
+                        disabled
+                        aria-describedby="pwmHelp"
+                    >
+                    <div id="pwmHelp" class="form-help">Adjust LED brightness from 0% to 100%</div>
+                </div>
+
+                <div style="display: flex; gap: var(--spacing-md); justify-content: center; margin: var(--spacing-lg) 0;">
+                    <button id="ledOnBtn" class="btn btn-success" disabled>LED On</button>
+                    <button id="ledOffBtn" class="btn btn-secondary" disabled>LED Off</button>
+                </div>
+
+                <div class="chart-container">
+                    <canvas id="ledChart" width="400" height="200"></canvas>
+                </div>
+
+                <div style="display: flex; gap: var(--spacing-md); justify-content: center;">
+                    <button id="clearLedHistory" class="btn btn-secondary">Clear History</button>
+                    <button id="exportLedData" class="btn btn-secondary">Export CSV</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Temperature Panel -->
+        <div id="temperature-panel" class="experiment-panel card" role="tabpanel">
+            <div class="card-header">
+                <h3 class="card-title">Temperature Sensor</h3>
+            </div>
+            <div class="card-content">
+                <div class="measurement-display">
+                    <div class="measurement-value" id="temperatureValue">--</div>
+                    <div class="measurement-unit">°C</div>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="tempMin">--</div>
+                        <div class="stat-label">Min</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="tempAvg">--</div>
+                        <div class="stat-label">Avg</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="tempMax">--</div>
+                        <div class="stat-label">Max</div>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: var(--spacing-md); justify-content: center; margin: var(--spacing-lg) 0;">
+                    <button id="readTempBtn" class="btn btn-primary" disabled>Read Once</button>
+                    <button id="startMonitoringBtn" class="btn btn-success" disabled>Start Monitoring</button>
+                    <button id="stopMonitoringBtn" class="btn btn-warning" disabled style="display: none;">Stop Monitoring</button>
+                </div>
+
+                <div class="chart-container">
+                    <canvas id="temperatureChart" width="400" height="200"></canvas>
+                </div>
+
+                <div style="display: flex; gap: var(--spacing-md); justify-content: center;">
+                    <button id="clearTempHistory" class="btn btn-secondary">Clear History</button>
+                    <button id="exportTempData" class="btn btn-secondary">Export CSV</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Light Sensor Panel -->
+        <div id="light-panel" class="experiment-panel card" role="tabpanel">
+            <div class="card-header">
+                <h3 class="card-title">Light Sensor</h3>
+            </div>
+            <div class="card-content">
+                <div class="measurement-display">
+                    <div class="measurement-value" id="lightValue">--</div>
+                    <div class="measurement-unit">lux</div>
+                    <div class="progress">
+                        <div id="lightProgress" class="progress-bar" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <div style="text-align: center; margin-bottom: var(--spacing-lg);">
+                    <button id="readLightBtn" class="btn btn-primary" disabled>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="4"/>
+                            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 6.34L4.93 4.93M19.07 19.07l-1.41-1.41"/>
+                        </svg>
+                        Read Light Level
+                    </button>
+                </div>
+
+                <div class="chart-container">
+                    <canvas id="lightChart" width="400" height="200"></canvas>
+                </div>
+
+                <div style="display: flex; gap: var(--spacing-md); justify-content: center;">
+                    <button id="clearLightHistory" class="btn btn-secondary">Clear History</button>
+                    <button id="exportLightData" class="btn btn-secondary">Export CSV</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Logic Gates Panel -->
+        <div id="logic-panel" class="experiment-panel card" role="tabpanel">
+            <div class="card-header">
+                <h3 class="card-title">Logic Gates</h3>
+            </div>
+            <div class="card-content">
+                <div class="form-group">
+                    <label for="gateSelect" class="form-label">Gate Type</label>
+                    <select id="gateSelect" class="form-input" disabled>
+                        <option value="AND">AND</option>
+                        <option value="OR">OR</option>
+                        <option value="NOT">NOT</option>
+                        <option value="NAND">NAND</option>
+                        <option value="NOR">NOR</option>
+                        <option value="XOR">XOR</option>
+                    </select>
+                </div>
+
+                <div class="logic-inputs">
+                    <div class="logic-input">
+                        <label class="form-label">Input A</label>
+                        <div id="inputA" class="logic-switch" tabindex="0" role="switch" aria-checked="false" aria-label="Logic input A"></div>
+                        <span id="inputAValue">0</span>
+                    </div>
+                    <div class="logic-input">
+                        <label class="form-label">Input B</label>
+                        <div id="inputB" class="logic-switch" tabindex="0" role="switch" aria-checked="false" aria-label="Logic input B"></div>
+                        <span id="inputBValue">0</span>
+                    </div>
+                    <div class="logic-input">
+                        <label class="form-label">Output</label>
+                        <div id="outputLed" class="led-visual" style="width: 2rem; height: 2rem;"></div>
+                        <span id="outputValue">0</span>
+                    </div>
+                </div>
+
+                <table class="truth-table">
+                    <thead>
+                        <tr>
+                            <th>A</th>
+                            <th>B</th>
+                            <th>Output</th>
+                        </tr>
+                    </thead>
+                    <tbody id="truthTableBody">
+                        <tr><td>0</td><td>0</td><td id="tt00">0</td></tr>
+                        <tr><td>0</td><td>1</td><td id="tt01">0</td></tr>
+                        <tr><td>1</td><td>0</td><td id="tt10">0</td></tr>
+                        <tr><td>1</td><td>1</td><td id="tt11">0</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+
+    <script>
+        /**
+         * Remote Laboratory Multi-Experiment Platform
+         * 
+         * Main JavaScript application for ESP32-based remote laboratory
+         * Supports 5 experiments: Resistor, LED PWM, Temperature, Light, Logic Gates
+         * 
+         * ESP32 Integration Points:
+         * - Update DEVICE_API endpoints to match your ESP32 server
+         * - Modify WebSocket connection logic for your specific implementation
+         * - Adjust measurement ranges and calibration factors as needed
+         */
+
+        // =============================================================================
+        // CONFIGURATION & CONSTANTS
+        // =============================================================================
+
+        const CONFIG = {
+            WEBSOCKET_PORT: 81,
+            HTTP_PORT: 80,
+            MAX_HISTORY_ITEMS: 500,
+            CHART_MAX_POINTS: 50,
+            TEMPERATURE_MONITORING_INTERVAL: 1000,
+            PING_INTERVAL: 5000,
+            TOAST_DURATION: 4000
+        };
+
+        const STORAGE_KEYS = {
+            THEME: 'remoteLab.theme',
+            LAST_IP: 'remoteLab.lastIp',
+            LAST_EXPERIMENT: 'remoteLab.lastExperiment',
+            HISTORY_RESISTOR: 'remoteLab.history.resistor',
+            HISTORY_LED: 'remoteLab.history.led',
+            HISTORY_TEMPERATURE: 'remoteLab.history.temperature',
+            HISTORY_LIGHT: 'remoteLab.history.light'
+        };
+
+        // =============================================================================
+        // DEVICE API - ESP32 INTEGRATION POINTS
+        // =============================================================================
+
+        /**
+         * Device API for ESP32 communication
+         * TODO: Replace mock implementations with actual fetch() calls to ESP32 endpoints
+         */
+        const DeviceAPI = {
+            websocket: null,
+            isConnected: false,
+
+            /**
+             * Connect to ESP32 device
+             * TODO: ESP32 - Replace mock with actual WebSocket connection
+             */
+            async connect(ip) {
+                return new Promise((resolve, reject) => {
+                    // Simulate connection delay
+                    setTimeout(() => {
+                        // Mock 10% failure rate for testing
+                        if (Math.random() < 0.1) {
+                            reject(new Error('Connection failed'));
+                            return;
+                        }
+
+                        this.isConnected = true;
+                        resolve({ success: true, message: 'Connected successfully' });
+
+                        // TODO: ESP32 - Replace with actual WebSocket connection:
+                        // this.websocket = new WebSocket(`ws://${ip}:${CONFIG.WEBSOCKET_PORT}`);
+                        // this.websocket.onopen = () => resolve({ success: true });
+                        // this.websocket.onerror = () => reject(new Error('WebSocket connection failed'));
+                        // this.websocket.onmessage = (event) => this.handleMessage(JSON.parse(event.data));
+                    }, Math.random() * 500 + 300);
+                });
+            },
+
+            /**
+             * Disconnect from ESP32
+             * TODO: ESP32 - Add actual WebSocket cleanup
+             */
+            disconnect() {
+                this.isConnected = false;
+                if (this.websocket) {
+                    this.websocket.close();
+                    this.websocket = null;
+                }
+            },
+
+            /**
+             * Ping ESP32 device
+             * TODO: ESP32 - Replace with actual ping endpoint: fetch(`http://${ip}/ping`)
+             */
+            async ping() {
+                if (!this.isConnected) throw new Error('Not connected');
+                
+                const start = Date.now();
+                await new Promise(resolve => setTimeout(resolve, Math.random() * 50 + 10));
+                return Date.now() - start;
+            },
+
+            /**
+             * Measure resistor value
+             * TODO: ESP32 - Replace with: fetch(`http://${ip}/api/measure/resistor`)
+             */
+            async measureResistor() {
+                if (!this.isConnected) throw new Error('Not connected');
+                
+                await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate measurement time
+                
+                // Simulate realistic resistor values with some noise
+                const baseValues = [1000, 4700, 10000, 22000, 47000, 100000];
+                const baseValue = baseValues[Math.floor(Math.random() * baseValues.length)];
+                const noise = (Math.random() - 0.5) * 0.1; // ±5% noise
+                const resistance = Math.round(baseValue * (1 + noise));
+                
+                return {
+                    resistance,
+                    timestamp: new Date().toISOString(),
+                    quality: resistance > 0 ? 'good' : 'poor'
+                };
+            },
+
+            /**
+             * Set LED PWM duty cycle
+             * TODO: ESP32 - Replace with: fetch(`http://${ip}/api/led/pwm`, { method: 'POST', body: JSON.stringify({duty}) })
+             */
+            async setPwm(duty) {
+                if (!this.isConnected) throw new Error('Not connected');
+                
+                // Simulate occasional failures
+                if (Math.random() < 0.05) {
+                    throw new Error('PWM command failed');
+                }
+                
+                await new Promise(resolve => setTimeout(resolve, 100));
+                return { duty, timestamp: new Date().toISOString() };
+            },
+
+            /**
+             * Read temperature sensor
+             * TODO: ESP32 - Replace with: fetch(`http://${ip}/api/temperature`)
+             */
+            async readTemperature() {
+                if (!this.isConnected) throw new Error('Not connected');
+                
+                await new Promise(resolve => setTimeout(resolve, 200));
+                
+                // Simulate realistic temperature with slow drift
+                const baseTemp = 22 + Math.sin(Date.now() / 60000) * 3; // Slow sine wave
+                const noise = (Math.random() - 0.5) * 0.5; // ±0.25°C noise
+                const temperature = Math.round((baseTemp + noise) * 10) / 10;
+                
+                return {
+                    temperature,
+                    timestamp: new Date().toISOString()
+                };
+            },
+
+            /**
+             * Read light sensor
+             * TODO: ESP32 - Replace with: fetch(`http://${ip}/api/light`)
+             */
+            async readLight() {
+                if (!this.isConnected) throw new Error('Not connected');
+                
+                await new Promise(resolve => setTimeout(resolve, 200));
+                
+                // Simulate light level with some variation
+                const baseLux = 300 + Math.sin(Date.now() / 30000) * 200;
+                const noise = (Math.random() - 0.5) * 50;
+                const lux = Math.max(0, Math.round(baseLux + noise));
+                
+                return {
+                    lux,
+                    timestamp: new Date().toISOString()
+                };
+            },
+
+            /**
+             * Set logic gate inputs
+             * TODO: ESP32 - Replace with: fetch(`http://${ip}/api/logic`, { method: 'POST', body: JSON.stringify({gate, inputA, inputB}) })
+             */
+            async setLogicGate(gate, inputA, inputB) {
+                if (!this.isConnected) throw new Error('Not connected');
+                
+                await new Promise(resolve => setTimeout(resolve, 50));
+                
+                // Calculate logic gate output
+                let output = false;
+                switch (gate) {
+                    case 'AND': output = inputA && inputB; break;
+                    case 'OR': output = inputA || inputB; break;
+                    case 'NOT': output = !inputA; break;
+                    case 'NAND': output = !(inputA && inputB); break;
+                    case 'NOR': output = !(inputA || inputB); break;
+                    case 'XOR': output = inputA !== inputB; break;
+                }
+                
+                return { gate, inputA, inputB, output };
+            }
+        };
+
+        // =============================================================================
+        // APPLICATION STATE
+        // =============================================================================
+
+        const AppState = {
+            currentExperiment: 'resistor',
+            connectionStatus: 'disconnected', // disconnected, connecting, connected, error
+            deviceIp: '',
+            isMonitoring: false,
+            monitoringInterval: null,
+            pingInterval: null,
+            
+            // Experiment data
+            data: {
+                resistor: [],
+                led: [],
+                temperature: [],
+                light: []
+            },
+
+            // Logic gate state
+            logicGate: {
+                type: 'AND',
+                inputA: false,
+                inputB: false,
+                output: false
+            }
+        };
+
+        // =============================================================================
+        // UTILITY FUNCTIONS
+        // =============================================================================
+
+        /**
+         * Format resistance value with appropriate unit
+         */
+        function formatResistance(ohms) {
+            if (ohms >= 1e6) {
+                return `${(ohms / 1e6).toFixed(2)} MΩ`;
+            } else if (ohms >= 1e3) {
+                return `${(ohms / 1e3).toFixed(2)} kΩ`;
+            } else {
+                return `${ohms.toFixed(0)} Ω`;
+            }
+        }
+
+        /**
+         * Validate IPv4 address format
+         */
+        function isValidIP(ip) {
+            const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+            return ipRegex.test(ip);
+        }
+
+        /**
+         * Show toast notification
+         */
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `
+                <div style="display: flex; align-items: center; gap: var(--spacing-sm);">
+                    <div style="flex: 1;">${message}</div>
+                    <button onclick="this.parentElement.parentElement.remove()" style="background: none; border: none; cursor: pointer; color: var(--color-text-secondary);">×</button>
+                </div>
+            `;
+            
+            container.appendChild(toast);
+            
+            // Auto-remove after duration
+            setTimeout(() => {
+                if (toast.parentElement) {
+                    toast.remove();
+                }
+            }, CONFIG.TOAST_DURATION);
+        }
+
+        /**
+         * Update connection status display
+         */
+        function updateConnectionStatus(status) {
+            AppState.connectionStatus = status;
+            const indicator = document.getElementById('connectionStatus');
+            const statusText = indicator.querySelector('.status-text');
+            
+            indicator.className = `connection-status ${status}`;
+            
+            const statusMessages = {
+                disconnected: 'Disconnected',
+                connecting: 'Connecting...',
+                connected: 'Connected',
+                error: 'Connection Error'
+            };
+            
+            statusText.textContent = statusMessages[status] || status;
+            
+            // Enable/disable experiment controls
+            const isConnected = status === 'connected';
+            updateExperimentControls(isConnected);
+        }
+
+        /**
+         * Enable/disable experiment controls based on connection status
+         */
+        function updateExperimentControls(enabled) {
+            const controls = [
+                'measureResistorBtn', 'pwmSlider', 'ledOnBtn', 'ledOffBtn',
+                'readTempBtn', 'startMonitoringBtn', 'readLightBtn',
+                'gateSelect', 'inputA', 'inputB'
+            ];
+            
+            controls.forEach(id => {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.disabled = !enabled;
+                }
+            });
+        }
+
+        // =============================================================================
+        // CHART MANAGEMENT
+        // =============================================================================
+
+        /**
+         * Simple canvas-based chart implementation
+         */
+        class SimpleChart {
+            constructor(canvas, options = {}) {
+                this.canvas = canvas;
+                this.ctx = canvas.getContext('2d');
+                this.data = [];
+                this.options = {
+                    maxPoints: CONFIG.CHART_MAX_POINTS,
+                    color: '#4f46e5',
+                    backgroundColor: 'rgba(79, 70, 229, 0.1)',
+                    ...options
+                };
+                
+                this.resize();
+            }
+
+            resize() {
+                const rect = this.canvas.getBoundingClientRect();
+                this.canvas.width = rect.width * window.devicePixelRatio;
+                this.canvas.height = rect.height * window.devicePixelRatio;
+                this.ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+                this.canvas.style.width = rect.width + 'px';
+                this.canvas.style.height = rect.height + 'px';
+            }
+
+            addData(value, timestamp) {
+                this.data.push({ value, timestamp });
+                if (this.data.length > this.options.maxPoints) {
+                    this.data.shift();
+                }
+                this.render();
+            }
+
+            setData(data) {
+                this.data = [...data].slice(-this.options.maxPoints);
+                this.render();
+            }
+
+            clear() {
+                this.data = [];
+                this.render();
+            }
+
+            render() {
+                const { width, height } = this.canvas.getBoundingClientRect();
+                this.ctx.clearRect(0, 0, width, height);
+
+                if (this.data.length === 0) {
+                    // Show empty state
+                    this.ctx.fillStyle = 'var(--color-text-muted)';
+                    this.ctx.font = '14px sans-serif';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText('No data available', width / 2, height / 2);
+                    return;
+                }
+
+                const padding = 20;
+                const chartWidth = width - 2 * padding;
+                const chartHeight = height - 2 * padding;
+
+                // Calculate data bounds
+                const values = this.data.map(d => d.value);
+                const minValue = Math.min(...values);
+                const maxValue = Math.max(...values);
+                const valueRange = maxValue - minValue || 1;
+
+                // Draw background
+                this.ctx.fillStyle = this.options.backgroundColor;
+                this.ctx.fillRect(padding, padding, chartWidth, chartHeight);
+
+                // Draw line
+                if (this.data.length > 1) {
+                    this.ctx.strokeStyle = this.options.color;
+                    this.ctx.lineWidth = 2;
+                    this.ctx.beginPath();
+
+                    this.data.forEach((point, index) => {
+                        const x = padding + (index / (this.data.length - 1)) * chartWidth;
+                        const y = padding + chartHeight - ((point.value - minValue) / valueRange) * chartHeight;
+                        
+                        if (index === 0) {
+                            this.ctx.moveTo(x, y);
+                        } else {
+                            this.ctx.lineTo(x, y);
+                        }
+                    });
+
+                    this.ctx.stroke();
+                }
+
+                // Draw points
+                this.ctx.fillStyle = this.options.color;
+                this.data.forEach((point, index) => {
+                    const x = padding + (index / Math.max(this.data.length - 1, 1)) * chartWidth;
+                    const y = padding + chartHeight - ((point.value - minValue) / valueRange) * chartHeight;
+                    
+                    this.ctx.beginPath();
+                    this.ctx.arc(x, y, 3, 0, 2 * Math.PI);
+                    this.ctx.fill();
+                });
+
+                // Draw axes labels
+                this.ctx.fillStyle = 'var(--color-text-secondary)';
+                this.ctx.font = '12px sans-serif';
+                this.ctx.textAlign = 'left';
+                this.ctx.fillText(minValue.toFixed(1), padding, height - 5);
+                this.ctx.textAlign = 'right';
+                this.ctx.fillText(maxValue.toFixed(1), width - padding, height - 5);
+            }
+        }
+
+        // Chart instances
+        let charts = {};
+
+        /**
+         * Initialize all charts
+         */
+        function initializeCharts() {
+            charts.resistor = new SimpleChart(document.getElementById('resistorChart'), {
+                color: '#4f46e5'
+            });
+            charts.led = new SimpleChart(document.getElementById('ledChart'), {
+                color: '#f59e0b'
+            });
+            charts.temperature = new SimpleChart(document.getElementById('temperatureChart'), {
+                color: '#ef4444'
+            });
+            charts.light = new SimpleChart(document.getElementById('lightChart'), {
+                color: '#10b981'
+            });
+
+            // Handle window resize
+            window.addEventListener('resize', () => {
+                Object.values(charts).forEach(chart => {
+                    chart.resize();
+                    chart.render();
+                });
+            });
+        }
+
+        // =============================================================================
+        // DATA MANAGEMENT
+        // =============================================================================
+
+        /**
+         * Add data point to experiment history
+         */
+        function addDataPoint(experiment, data) {
+            if (!AppState.data[experiment]) {
+                AppState.data[experiment] = [];
+            }
+            
+            AppState.data[experiment].unshift(data);
+            
+            // Limit history size
+            if (AppState.data[experiment].length > CONFIG.MAX_HISTORY_ITEMS) {
+                AppState.data[experiment] = AppState.data[experiment].slice(0, CONFIG.MAX_HISTORY_ITEMS);
+            }
+            
+            // Update chart
+            if (charts[experiment]) {
+                charts[experiment].setData(AppState.data[experiment].slice().reverse());
+            }
+            
+            // Save to localStorage
+            saveDataToStorage(experiment);
+        }
+
+        /**
+         * Clear experiment history
+         */
+        function clearHistory(experiment) {
+            AppState.data[experiment] = [];
+            if (charts[experiment]) {
+                charts[experiment].clear();
+            }
+            saveDataToStorage(experiment);
+            showToast(`${experiment} history cleared`, 'success');
+        }
+
+        /**
+         * Export experiment data as CSV
+         */
+        function exportData(experiment) {
+            const data = AppState.data[experiment];
+            if (!data || data.length === 0) {
+                showToast('No data to export', 'warning');
+                return;
+            }
+
+            let csv = '';
+            let filename = '';
+
+            switch (experiment) {
+                case 'resistor':
+                    csv = 'timestamp_iso,resistance_ohms\n';
+                    csv += data.map(d => `${d.timestamp},${d.resistance}`).join('\n');
+                    filename = `resistor_${new Date().toISOString().split('T')[0]}.csv`;
+                    break;
+                case 'led':
+                    csv = 'timestamp_iso,duty_cycle_percent\n';
+                    csv += data.map(d => `${d.timestamp},${d.value}`).join('\n');
+                    filename = `led_pwm_${new Date().toISOString().split('T')[0]}.csv`;
+                    break;
+                case 'temperature':
+                    csv = 'timestamp_iso,temperature_c\n';
+                    csv += data.map(d => `${d.timestamp},${d.temperature}`).join('\n');
+                    filename = `temperature_${new Date().toISOString().split('T')[0]}.csv`;
+                    break;
+                case 'light':
+                    csv = 'timestamp_iso,light_lux\n';
+                    csv += data.map(d => `${d.timestamp},${d.lux}`).join('\n');
+                    filename = `light_${new Date().toISOString().split('T')[0]}.csv`;
+                    break;
+            }
+
+            // Create and download file
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            showToast(`Data exported as ${filename}`, 'success');
+        }
+
+        // =============================================================================
+        // LOCAL STORAGE
+        // =============================================================================
+
+        /**
+         * Save experiment data to localStorage
+         */
+        function saveDataToStorage(experiment) {
+            const key = STORAGE_KEYS[`HISTORY_${experiment.toUpperCase()}`];
+            if (key) {
+                localStorage.setItem(key, JSON.stringify(AppState.data[experiment]));
+            }
+        }
+
+        /**
+         * Load experiment data from localStorage
+         */
+        function loadDataFromStorage() {
+            Object.keys(AppState.data).forEach(experiment => {
+                const key = STORAGE_KEYS[`HISTORY_${experiment.toUpperCase()}`];
+                if (key) {
+                    const stored = localStorage.getItem(key);
+                    if (stored) {
+                        try {
+                            AppState.data[experiment] = JSON.parse(stored);
+                            if (charts[experiment]) {
+                                charts[experiment].setData(AppState.data[experiment].slice().reverse());
+                            }
+                        } catch (e) {
+                            console.warn(`Failed to load ${experiment} data:`, e);
+                        }
+                    }
+                }
+            });
+        }
+
+        /**
+         * Save app preferences to localStorage
+         */
+        function savePreferences() {
+            localStorage.setItem(STORAGE_KEYS.LAST_EXPERIMENT, AppState.currentExperiment);
+            localStorage.setItem(STORAGE_KEYS.LAST_IP, AppState.deviceIp);
+        }
+
+        /**
+         * Load app preferences from localStorage
+         */
+        function loadPreferences() {
+            const lastExperiment = localStorage.getItem(STORAGE_KEYS.LAST_EXPERIMENT);
+            if (lastExperiment) {
+                switchExperiment(lastExperiment);
+            }
+
+            const lastIp = localStorage.getItem(STORAGE_KEYS.LAST_IP);
+            if (lastIp) {
+                document.getElementById('deviceIp').value = lastIp;
+                AppState.deviceIp = lastIp;
+            }
+        }
+
+        // =============================================================================
+        // EXPERIMENT FUNCTIONS
+        // =============================================================================
+
+        /**
+         * Switch to different experiment
+         */
+        function switchExperiment(experiment) {
+            // Update tab buttons
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+                btn.setAttribute('aria-selected', 'false');
+                if (btn.dataset.experiment === experiment) {
+                    btn.classList.add('active');
+                    btn.setAttribute('aria-selected', 'true');
+                }
+            });
+
+            // Update panels
+            document.querySelectorAll('.experiment-panel').forEach(panel => {
+                panel.classList.remove('active');
+            });
+            
+            const targetPanel = document.getElementById(`${experiment}-panel`);
+            if (targetPanel) {
+                targetPanel.classList.add('active');
+            }
+
+            AppState.currentExperiment = experiment;
+            savePreferences();
+        }
+
+        /**
+         * Measure resistor value
+         */
+        async function measureResistor() {
+            if (AppState.connectionStatus !== 'connected') {
+                showToast('Device not connected', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('measureResistorBtn');
+            const progress = document.getElementById('resistorProgress');
+            const valueDisplay = document.getElementById('resistorValue');
+
+            try {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner"></span> Measuring...';
+                
+                // Animate progress bar
+                progress.style.width = '0%';
+                let progressValue = 0;
+                const progressInterval = setInterval(() => {
+                    progressValue += 5;
+                    progress.style.width = `${progressValue}%`;
+                    if (progressValue >= 100) {
+                        clearInterval(progressInterval);
+                    }
+                }, 75);
+
+                const result = await DeviceAPI.measureResistor();
+                
+                clearInterval(progressInterval);
+                progress.style.width = '100%';
+                
+                // Update display
+                valueDisplay.textContent = formatResistance(result.resistance).split(' ')[0];
+                document.querySelector('#resistor-panel .measurement-unit').textContent = 
+                    formatResistance(result.resistance).split(' ')[1] || 'Ω';
+
+                // Add to history
+                addDataPoint('resistor', result);
+                
+                showToast(`Resistance measured: ${formatResistance(result.resistance)}`, 'success');
+                
+            } catch (error) {
+                showToast(`Measurement failed: ${error.message}`, 'error');
+                progress.style.width = '0%';
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 12c-1 0-3-1-3-3s2-3 3-3 3 1 3 3-2 3-3 3"/>
+                        <path d="M3 12c1 0 3-1 3-3s-2-3-3-3-3 1-3 3 2 3 3 3"/>
+                        <path d="M3 12h6m6 0h6"/>
+                    </svg>
+                    Measure Resistor
+                `;
+            }
+        }
+
+        /**
+         * Update LED PWM duty cycle
+         */
+        async function updateLedPwm(duty) {
+            if (AppState.connectionStatus !== 'connected') return;
+
+            try {
+                await DeviceAPI.setPwm(duty);
+                
+                // Update visual
+                const ledVisual = document.getElementById('ledVisual');
+                if (duty > 0) {
+                    ledVisual.classList.add('on');
+                    ledVisual.style.opacity = duty / 100;
+                } else {
+                    ledVisual.classList.remove('on');
+                }
+
+                // Add to history
+                addDataPoint('led', {
+                    value: duty,
+                    timestamp: new Date().toISOString()
+                });
+
+            } catch (error) {
+                showToast(`PWM update failed: ${error.message}`, 'error');
+            }
+        }
+
+        /**
+         * Read temperature sensor
+         */
+        async function readTemperature() {
+            if (AppState.connectionStatus !== 'connected') {
+                showToast('Device not connected', 'error');
+                return;
+            }
+
+            try {
+                const result = await DeviceAPI.readTemperature();
+                
+                // Update display
+                document.getElementById('temperatureValue').textContent = result.temperature.toFixed(1);
+                
+                // Add to history
+                addDataPoint('temperature', result);
+                
+                // Update statistics
+                updateTemperatureStats();
+                
+            } catch (error) {
+                showToast(`Temperature reading failed: ${error.message}`, 'error');
+            }
+        }
+
+        /**
+         * Update temperature statistics
+         */
+        function updateTemperatureStats() {
+            const data = AppState.data.temperature;
+            if (data.length === 0) return;
+
+            const temperatures = data.map(d => d.temperature);
+            const min = Math.min(...temperatures);
+            const max = Math.max(...temperatures);
+            const avg = temperatures.reduce((a, b) => a + b, 0) / temperatures.length;
+
+            document.getElementById('tempMin').textContent = min.toFixed(1);
+            document.getElementById('tempMax').textContent = max.toFixed(1);
+            document.getElementById('tempAvg').textContent = avg.toFixed(1);
+        }
+
+        /**
+         * Start temperature monitoring
+         */
+        function startTemperatureMonitoring() {
+            if (AppState.isMonitoring) return;
+
+            AppState.isMonitoring = true;
+            document.getElementById('startMonitoringBtn').style.display = 'none';
+            document.getElementById('stopMonitoringBtn').style.display = 'inline-flex';
+
+            AppState.monitoringInterval = setInterval(readTemperature, CONFIG.TEMPERATURE_MONITORING_INTERVAL);
+            showToast('Temperature monitoring started', 'success');
+        }
+
+        /**
+         * Stop temperature monitoring
+         */
+        function stopTemperatureMonitoring() {
+            if (!AppState.isMonitoring) return;
+
+            AppState.isMonitoring = false;
+            document.getElementById('startMonitoringBtn').style.display = 'inline-flex';
+            document.getElementById('stopMonitoringBtn').style.display = 'none';
+
+            if (AppState.monitoringInterval) {
+                clearInterval(AppState.monitoringInterval);
+                AppState.monitoringInterval = null;
+            }
+
+            showToast('Temperature monitoring stopped', 'info');
+        }
+
+        /**
+         * Read light sensor
+         */
+        async function readLight() {
+            if (AppState.connectionStatus !== 'connected') {
+                showToast('Device not connected', 'error');
+                return;
+            }
+
+            try {
+                const result = await DeviceAPI.readLight();
+                
+                // Update display
+                document.getElementById('lightValue').textContent = Math.round(result.lux);
+                
+                // Update progress bar (assuming 0-2000 lux range)
+                const percentage = Math.min((result.lux / 2000) * 100, 100);
+                document.getElementById('lightProgress').style.width = `${percentage}%`;
+                
+                // Add to history
+                addDataPoint('light', result);
+                
+            } catch (error) {
+                showToast(`Light reading failed: ${error.message}`, 'error');
+            }
+        }
+
+        /**
+         * Update logic gate calculation
+         */
+        async function updateLogicGate() {
+            const gateType = document.getElementById('gateSelect').value;
+            const inputA = AppState.logicGate.inputA;
+            const inputB = AppState.logicGate.inputB;
+
+            // Disable input B for NOT gate
+            const inputBElement = document.getElementById('inputB');
+            if (gateType === 'NOT') {
+                inputBElement.style.opacity = '0.5';
+                inputBElement.style.pointerEvents = 'none';
+            } else {
+                inputBElement.style.opacity = '1';
+                inputBElement.style.pointerEvents = 'auto';
+            }
+
+            try {
+                if (AppState.connectionStatus === 'connected') {
+                    const result = await DeviceAPI.setLogicGate(gateType, inputA, inputB);
+                    AppState.logicGate.output = result.output;
+                } else {
+                    // Calculate locally when not connected
+                    let output = false;
+                    switch (gateType) {
+                        case 'AND': output = inputA && inputB; break;
+                        case 'OR': output = inputA || inputB; break;
+                        case 'NOT': output = !inputA; break;
+                        case 'NAND': output = !(inputA && inputB); break;
+                        case 'NOR': output = !(inputA || inputB); break;
+                        case 'XOR': output = inputA !== inputB; break;
+                    }
+                    AppState.logicGate.output = output;
+                }
+
+                // Update output display
+                document.getElementById('outputValue').textContent = AppState.logicGate.output ? '1' : '0';
+                const outputLed = document.getElementById('outputLed');
+                if (AppState.logicGate.output) {
+                    outputLed.classList.add('on');
+                } else {
+                    outputLed.classList.remove('on');
+                }
+
+                // Update truth table
+                updateTruthTable(gateType);
+
+            } catch (error) {
+                if (AppState.connectionStatus === 'connected') {
+                    showToast(`Logic gate update failed: ${error.message}`, 'error');
+                }
+            }
+        }
+
+        /**
+         * Update truth table for current gate
+         */
+        function updateTruthTable(gateType) {
+            const truthTables = {
+                'AND': [0, 0, 0, 1],
+                'OR': [0, 1, 1, 1],
+                'NOT': [1, 1, 0, 0],
+                'NAND': [1, 1, 1, 0],
+                'NOR': [1, 0, 0, 0],
+                'XOR': [0, 1, 1, 0]
+            };
+
+            const values = truthTables[gateType] || [0, 0, 0, 0];
+            document.getElementById('tt00').textContent = values[0];
+            document.getElementById('tt01').textContent = values[1];
+            document.getElementById('tt10').textContent = values[2];
+            document.getElementById('tt11').textContent = values[3];
+        }
+
+        /**
+         * Toggle logic input
+         */
+        function toggleLogicInput(input) {
+            AppState.logicGate[input] = !AppState.logicGate[input];
+            
+            const element = document.getElementById(input);
+            const valueElement = document.getElementById(`${input}Value`);
+            
+            if (AppState.logicGate[input]) {
+                element.classList.add('on');
+                element.setAttribute('aria-checked', 'true');
+                valueElement.textContent = '1';
+            } else {
+                element.classList.remove('on');
+                element.setAttribute('aria-checked', 'false');
+                valueElement.textContent = '0';
+            }
+            
+            updateLogicGate();
+        }
+
+        // =============================================================================
+        // CONNECTION MANAGEMENT
+        // =============================================================================
+
+        /**
+         * Connect to ESP32 device
+         */
+        async function connectToDevice() {
+            const ipInput = document.getElementById('deviceIp');
+            const connectBtn = document.getElementById('connectBtn');
+            const ip = ipInput.value.trim();
+
+            if (!ip) {
+                showToast('Please enter device IP address', 'warning');
+                ipInput.focus();
+                return;
+            }
+
+            if (!isValidIP(ip)) {
+                showToast('Please enter a valid IPv4 address', 'error');
+                ipInput.focus();
+                return;
+            }
+
+            try {
+                updateConnectionStatus('connecting');
+                connectBtn.innerHTML = '<span class="spinner"></span> Connecting...';
+                connectBtn.disabled = true;
+
+                await DeviceAPI.connect(ip);
+                
+                AppState.deviceIp = ip;
+                updateConnectionStatus('connected');
+                connectBtn.textContent = 'Disconnect';
+                connectBtn.className = 'btn btn-error';
+                
+                savePreferences();
+                showToast('Connected successfully', 'success');
+                
+                // Start ping monitoring
+                startPingMonitoring();
+                
+            } catch (error) {
+                updateConnectionStatus('error');
+                showToast(`Connection failed: ${error.message}`, 'error');
+            } finally {
+                connectBtn.disabled = false;
+                if (AppState.connectionStatus !== 'connected') {
+                    connectBtn.textContent = 'Connect';
+                    connectBtn.className = 'btn btn-primary';
+                }
+            }
+        }
+
+        /**
+         * Disconnect from device
+         */
+        function disconnectFromDevice() {
+            DeviceAPI.disconnect();
+            updateConnectionStatus('disconnected');
+            
+            const connectBtn = document.getElementById('connectBtn');
+            connectBtn.textContent = 'Connect';
+            connectBtn.className = 'btn btn-primary';
+            
+            // Stop monitoring
+            stopTemperatureMonitoring();
+            stopPingMonitoring();
+            
+            showToast('Disconnected', 'info');
+        }
+
+        /**
+         * Start ping monitoring
+         */
+        function startPingMonitoring() {
+            AppState.pingInterval = setInterval(async () => {
+                try {
+                    const latency = await DeviceAPI.ping();
+                    document.getElementById('pingValue').textContent = latency;
+                    document.getElementById('pingDisplay').style.display = 'block';
+                } catch (error) {
+                    console.warn('Ping failed:', error);
+                    // Could indicate connection loss
+                }
+            }, CONFIG.PING_INTERVAL);
+        }
+
+        /**
+         * Stop ping monitoring
+         */
+        function stopPingMonitoring() {
+            if (AppState.pingInterval) {
+                clearInterval(AppState.pingInterval);
+                AppState.pingInterval = null;
+            }
+            document.getElementById('pingDisplay').style.display = 'none';
+        }
+
+        // =============================================================================
+        // THEME MANAGEMENT
+        // =============================================================================
+
+        /**
+         * Initialize theme system
+         */
+        function initializeTheme() {
+            const savedTheme = localStorage.getItem(STORAGE_KEYS.THEME);
+            const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            
+            const theme = savedTheme || (systemPrefersDark ? 'dark' : 'light');
+            setTheme(theme);
+            
+            // Listen for system theme changes
+            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+                if (!localStorage.getItem(STORAGE_KEYS.THEME)) {
+                    setTheme(e.matches ? 'dark' : 'light');
+                }
+            });
+        }
+
+        /**
+         * Set application theme
+         */
+        function setTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem(STORAGE_KEYS.THEME, theme);
+            
+            // Update theme toggle icon
+            const themeToggle = document.getElementById('themeToggle');
+            themeToggle.innerHTML = theme === 'dark' ? 
+                `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>` :
+                `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="5"/>
+                    <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+                </svg>`;
+        }
+
+        /**
+         * Toggle theme
+         */
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            setTheme(newTheme);
+        }
+
+        // =============================================================================
+        // EVENT HANDLERS
+        // =============================================================================
+
+        /**
+         * Initialize all event listeners
+         */
+        function initializeEventListeners() {
+            // Theme toggle
+            document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+
+            // Connection
+            document.getElementById('connectBtn').addEventListener('click', () => {
+                if (AppState.connectionStatus === 'connected') {
+                    disconnectFromDevice();
+                } else {
+                    connectToDevice();
+                }
+            });
+
+            // IP input validation
+            const ipInput = document.getElementById('deviceIp');
+            ipInput.addEventListener('input', (e) => {
+                const ip = e.target.value;
+                const errorElement = document.getElementById('ipError');
+                
+                if (ip && !isValidIP(ip)) {
+                    errorElement.textContent = 'Invalid IPv4 address format';
+                    errorElement.style.display = 'block';
+                } else {
+                    errorElement.style.display = 'none';
+                }
+            });
+
+            // Enter key in IP input
+            ipInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    connectToDevice();
+                }
+            });
+
+            // Experiment tabs
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    switchExperiment(btn.dataset.experiment);
+                });
+            });
+
+            // Resistor measurement
+            document.getElementById('measureResistorBtn').addEventListener('click', measureResistor);
+            document.getElementById('clearResistorHistory').addEventListener('click', () => clearHistory('resistor'));
+            document.getElementById('exportResistorData').addEventListener('click', () => exportData('resistor'));
+
+            // LED PWM controls
+            const pwmSlider = document.getElementById('pwmSlider');
+            pwmSlider.addEventListener('input', (e) => {
+                const duty = parseInt(e.target.value);
+                document.getElementById('pwmValue').textContent = duty;
+                updateLedPwm(duty);
+            });
+
+            document.getElementById('ledOnBtn').addEventListener('click', () => {
+                pwmSlider.value = 100;
+                document.getElementById('pwmValue').textContent = '100';
+                updateLedPwm(100);
+            });
+
+            document.getElementById('ledOffBtn').addEventListener('click', () => {
+                pwmSlider.value = 0;
+                document.getElementById('pwmValue').textContent = '0';
+                updateLedPwm(0);
+            });
+
+            document.getElementById('clearLedHistory').addEventListener('click', () => clearHistory('led'));
+            document.getElementById('exportLedData').addEventListener('click', () => exportData('led'));
+
+            // Temperature controls
+            document.getElementById('readTempBtn').addEventListener('click', readTemperature);
+            document.getElementById('startMonitoringBtn').addEventListener('click', startTemperatureMonitoring);
+            document.getElementById('stopMonitoringBtn').addEventListener('click', stopTemperatureMonitoring);
+            document.getElementById('clearTempHistory').addEventListener('click', () => clearHistory('temperature'));
+            document.getElementById('exportTempData').addEventListener('click', () => exportData('temperature'));
+
+            // Light sensor controls
+            document.getElementById('readLightBtn').addEventListener('click', readLight);
+            document.getElementById('clearLightHistory').addEventListener('click', () => clearHistory('light'));
+            document.getElementById('exportLightData').addEventListener('click', () => exportData('light'));
+
+            // Logic gate controls
+            document.getElementById('gateSelect').addEventListener('change', updateLogicGate);
+            
+            document.getElementById('inputA').addEventListener('click', () => toggleLogicInput('inputA'));
+            document.getElementById('inputA').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    toggleLogicInput('inputA');
+                }
+            });
+
+            document.getElementById('inputB').addEventListener('click', () => toggleLogicInput('inputB'));
+            document.getElementById('inputB').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    toggleLogicInput('inputB');
+                }
+            });
+
+            // Keyboard shortcuts for logic gates
+            document.addEventListener('keydown', (e) => {
+                if (AppState.currentExperiment === 'logic' && !e.target.matches('input, select, textarea')) {
+                    switch (e.key.toLowerCase()) {
+                        case 'a':
+                            e.preventDefault();
+                            toggleLogicInput('inputA');
+                            break;
+                        case 'b':
+                            e.preventDefault();
+                            toggleLogicInput('inputB');
+                            break;
+                        case 'g':
+                            e.preventDefault();
+                            document.getElementById('gateSelect').focus();
+                            break;
+                    }
+                }
+            });
+        }
+
+        // =============================================================================
+        // INITIALIZATION
+        // =============================================================================
+
+        /**
+         * Initialize the application
+         */
+        function initializeApp() {
+            // Initialize theme
+            initializeTheme();
+            
+            // Initialize charts
+            initializeCharts();
+            
+            // Load saved data and preferences
+            loadDataFromStorage();
+            loadPreferences();
+            
+            // Initialize event listeners
+            initializeEventListeners();
+            
+            // Set initial state
+            updateConnectionStatus('disconnected');
+            updateLogicGate();
+            
+            // Add some sample data for demonstration
+            if (AppState.data.resistor.length === 0) {
+                const sampleData = [
+                    { resistance: 1000, timestamp: new Date(Date.now() - 300000).toISOString() },
+                    { resistance: 4700, timestamp: new Date(Date.now() - 240000).toISOString() },
+                    { resistance: 10000, timestamp: new Date(Date.now() - 180000).toISOString() },
+                    { resistance: 22000, timestamp: new Date(Date.now() - 120000).toISOString() },
+                    { resistance: 47000, timestamp: new Date(Date.now() - 60000).toISOString() }
+                ];
+                
+                AppState.data.resistor = sampleData;
+                charts.resistor.setData(sampleData);
+                saveDataToStorage('resistor');
+            }
+            
+            console.log('Remote Laboratory initialized successfully');
+        }
+
+        // Start the application when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeApp);
+        } else {
+            initializeApp();
+        }
+
+    </script>
+</body>
+</html>
