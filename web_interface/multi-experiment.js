@@ -109,7 +109,7 @@ function updateBrightness() {
         const brightness = parseInt(slider.value);
         valueDisplay.textContent = brightness;
         
-        sendCommand('set_led_brightness', { brightness });
+        sendCommand('set_led', { brightness });
         
         // Update visual LED indicator
         const ledBulb = document.getElementById('led-bulb');
@@ -145,7 +145,7 @@ function setLED(state) {
         if (ledBulb) {
             ledBulb.classList.remove('on');
         }
-        sendCommand('set_led_brightness', { brightness: 0 });
+        sendCommand('set_led', { brightness: 0 });
     }
 }
 
@@ -220,21 +220,49 @@ function stopTemperatureMonitoring() {
 // Light sensor handlers
 function handleLightReading(data) {
     const lightElement = document.getElementById('light-value');
+    const resistanceElement = document.getElementById('resistance-value');
     const progressElement = document.getElementById('light-progress');
     
-    if (lightElement && data.light_intensity !== undefined) {
+    if (lightElement && data.light_intensity !== undefined && data.resistance !== undefined) {
+        // Update light intensity display
         lightElement.textContent = Math.round(data.light_intensity);
         
-        // Update progress bar (assuming max 1000 lux)
-        if (progressElement) {
-            const percentage = Math.min((data.light_intensity / 1000) * 100, 100);
-            progressElement.style.width = `${percentage}%`;
+        // Update resistance display
+        if (resistanceElement) {
+            let displayResistance = data.resistance;
+            let unit = 'Ω';
+            
+            if (data.resistance >= 1000) {
+                displayResistance = (data.resistance / 1000).toFixed(1);
+                unit = 'kΩ';
+            }
+            resistanceElement.textContent = `${displayResistance} ${unit}`;
         }
         
-        // Add to history
+        // Update progress bar based on resistance (inverse relationship)
+        if (progressElement) {
+            // Map resistance to 0-100% (lower resistance = higher light = more progress)
+            // Use log scale for better visualization across wide resistance range
+            const minResistance = 100;  // Minimum expected resistance in bright light (Ω)
+            const maxResistance = 100000; // Maximum expected resistance in darkness (Ω)
+            
+            let resistance = Math.max(minResistance, Math.min(data.resistance, maxResistance));
+            // Logarithmic scale for better visualization
+            const logMin = Math.log10(minResistance);
+            const logMax = Math.log10(maxResistance);
+            const logResistance = Math.log10(resistance);
+            
+            // Invert the scale (higher resistance = lower light = less progress)
+            const percentage = 100 * (1 - ((logResistance - logMin) / (logMax - logMin)));
+            progressElement.style.width = `${Math.max(0, Math.min(100, percentage))}%`;
+        }
+        
+        // Add to history - store both light intensity and resistance
         addToExperimentHistory('light', {
-            value: data.light_intensity,
-            unit: 'lux',
+            value: data.resistance,  // Use resistance for the graph
+            light_intensity: data.light_intensity,
+            resistance: data.resistance,
+            unit: 'Ω',
             timestamp: new Date().toISOString()
         });
         
@@ -357,10 +385,27 @@ function loadExperimentData() {
 // Chart management
 function initializeCharts() {
     const chartConfigs = {
-        'resistor': { label: 'Resistance (Ω)', color: 'rgb(75, 192, 192)' },
-        'temperature': { label: 'Temperature (°C)', color: 'rgb(255, 99, 132)' },
-        'light': { label: 'Light Intensity (lux)', color: 'rgb(255, 205, 86)' },
-        'pwm': { label: 'PWM Duty Cycle (%)', color: 'rgb(54, 162, 235)' }
+        'resistor': { 
+            label: 'Resistance (Ω)', 
+            color: 'rgb(75, 192, 192)',
+            formatValue: (value) => value >= 1000 ? `${(value/1000).toFixed(1)}k` : Math.round(value)
+        },
+        'temperature': { 
+            label: 'Temperature (°C)', 
+            color: 'rgb(255, 99, 132)',
+            formatValue: (value) => value.toFixed(1)
+        },
+        'light': { 
+            label: 'LDR Resistance (Ω)', 
+            color: 'rgb(255, 205, 86)',
+            formatValue: (value) => value >= 1000 ? `${(value/1000).toFixed(1)}k` : Math.round(value),
+            scaleType: 'logarithmic'
+        },
+        'pwm': { 
+            label: 'PWM Duty Cycle (%)', 
+            color: 'rgb(54, 162, 235)',
+            formatValue: (value) => Math.round(value)
+        }
     };
     
     Object.keys(chartConfigs).forEach(experiment => {
@@ -369,6 +414,51 @@ function initializeCharts() {
             const ctx = canvas.getContext('2d');
             const config = chartConfigs[experiment];
             
+            // Common chart options
+            const commonOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: config.scaleType !== 'logarithmic',
+                        type: config.scaleType === 'logarithmic' ? 'logarithmic' : 'linear',
+                        title: {
+                            display: true,
+                            text: config.label
+                        },
+                        ticks: {
+                            callback: function(value) {
+                                if (config.scaleType === 'logarithmic') {
+                                    return value >= 1000 ? `${(value/1000).toFixed(0)}k` : value;
+                                }
+                                return value;
+                            }
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Time'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const value = context.parsed.y;
+                                return `${config.label.split(' (')[0]}: ${config.formatValue ? config.formatValue(value) : value}${config.label.includes('(') ? ' ' + config.label.split('(')[1].split(')')[0] : ''}`;
+                            }
+                        }
+                    }
+                }
+            };
+            
+            // Create chart with common options
             charts[experiment] = new Chart(ctx, {
                 type: 'line',
                 data: {
@@ -378,35 +468,14 @@ function initializeCharts() {
                         data: [],
                         borderColor: config.color,
                         backgroundColor: config.color + '20',
+                        borderWidth: 2,
+                        pointRadius: 3,
+                        pointHoverRadius: 5,
                         tension: 0.1,
                         fill: false
                     }]
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            title: {
-                                display: true,
-                                text: config.label
-                            }
-                        },
-                        x: {
-                            title: {
-                                display: true,
-                                text: 'Time'
-                            }
-                        }
-                    },
-                    plugins: {
-                        legend: {
-                            display: true,
-                            position: 'top'
-                        }
-                    }
-                }
+                options: commonOptions
             });
         }
     });
